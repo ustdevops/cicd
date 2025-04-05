@@ -1,43 +1,71 @@
 pipeline {
+    agent any
 
-//  environment {
-//    registry = "nevincleetus/java-web-app-cicd"
-//    registryCredential = 'dockerhub'
-//    dockerImage = ''
-//  }
+    environment {
+        DOCKER_IMAGE = 'java-web-app-cicd:latest'
+        CONTAINER_NAME = 'java-web-app-cicd'
+        DOCKER_USERNAME = 'vinayz7'
+        DOCKER_PASSWORD = 'dckr_pat_Nd_U85FWpyzTBJxZX7U55noic2o'
+        DOCKER_REPO = 'vinayz7/java-web-app-cicd:latest'
+    }
 
-  agent any 
-
-  stages {
-
-        stage('Build') {
-          agent {
-            docker {
-               image 'maven:3-alpine'
-               args '-v /root/.m2:/root/.m2'
-            }
-          }
-
+    stages {
+        stage('Checkout') {
             steps {
-                sh 'mvn -B -DskipTests clean package'
+                git 'https://github.com/ustdevops/cicd.git'
             }
         }
-        stage('Test') {
-            agent {
-               docker {
-                   image 'maven:3-alpine'
-                   args '-v /root/.m2:/root/.m2'
-               }
+
+        stage('Build') {
+            steps {
+                sh 'mvn clean install'
             }
+        }
+
+        stage('Docker Build') {
+            steps {
+                sh 'docker build -t $DOCKER_IMAGE .'
+            }
+        }
+
+        stage('Remove Existing Container') {
+            steps {
+                script {
+                    def containerExists = sh(script: "docker ps -a | grep '$CONTAINER_NAME'", returnStatus: true) == 0
+                    if (containerExists) {
+                        sh "docker rm -f $CONTAINER_NAME"
+                    }
+                }
+            }
+        }
+
+        stage('Run Docker Container') {
+            steps {
+                sh 'docker run -d -p 8882:8080 --name $CONTAINER_NAME $DOCKER_IMAGE'
+            }
+        }
+
+        stage('Run Tests') {
             steps {
                 sh 'mvn test'
             }
-            post {
-                always {
-                    junit 'target/surefire-reports/*.xml'
-                }
+        }
+
+        stage('Docker Push') {
+            steps {
+                sh 'echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin'
+                sh 'docker commit $CONTAINER_NAME $DOCKER_REPO'
+                sh 'docker push $DOCKER_REPO'
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                sh 'kubectl delete deploy --all'
+                sh 'kubectl apply -f deploy-tomcat.yaml'
             }
         }
     }
 }
- 
+
+
